@@ -1,0 +1,116 @@
+Analysis of economic and health damages caused by storms and other severe weather events
+========================================================
+
+Storms and other severe weather events can cause both public health and economic problems for communities and municipalities. Many severe events can result in fatalities, injuries, and property damage, and preventing such outcomes to the extent possible is a key concern.
+
+This project involves exploring the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database. This database tracks characteristics of major storms and weather events in the United States, including when and where they occur, as well as estimates of any fatalities, injuries, and property damage.
+
+In this study, we try to show that flood causes major economic problems, up to hundred of billions dollars since the beginning of this study.
+As for public health, tornados are one of extreme events which cause most of fatalities and injuries.
+
+## Data Processing
+```{r echo=TRUE}
+setwd("C:/Users/HomeUser/Documents/Spécialité Data Science/Reproducible Research/repos/WeatherDamages")
+```
+
+### Data Loading
+```{r echo=TRUE,cache=TRUE}
+rawdata <- read.csv("../../data/repdata_data_StormData.csv.bz2", header = T
+                    , sep=","
+                        ,na.strings = "?"
+                        , comment.char = "")
+print(object.size(rawdata),unit='Mb')
+```
+
+### Narrowing to most relevant informations
+```{r echo=TRUE}
+```
+#### Get quick informations on variables
+```{r echo=TRUE}
+str(rawdata)
+```
+#### Get deeper information on relevant numeric variables
+```{r echo=TRUE}
+summary(rawdata[,c("PROPDMG", "CROPDMG")])
+```
+#### Get deeper information on relevant ordinal variables
+```{r echo=TRUE}
+unique(rawdata$PROPDMGEXP)
+unique(rawdata$CROPDMGEXP)
+```
+#### Get deeper information on relevant categorical variables
+```{r echo=TRUE}
+length(unique(rawdata$EVTYPE))
+head(sort(unique(rawdata$EVTYPE)),50)
+```
+-> ToDo: We should group similar categorical variables!
+Hierarchical clustering based on distance and time proximity?
+Keywords?
+#### Get deeper information on other potential relevant variables
+```{r echo=TRUE}
+head(unique(rawdata$REMARKS),3)
+```
+#### Let's narrow now
+```{r echo=TRUE}
+narrowdata <- subset(x = rawdata, subset = FATALITIES > 0 | INJURIES > 
+    0 | PROPDMG > 0 | CROPDMG > 0, select = c("STATE", "EVTYPE", "FATALITIES", "INJURIES", "PROPDMG", "CROPDMG", "PROPDMGEXP", "CROPDMGEXP"))
+print(object.size(narrowdata),unit='Mb')
+
+rm(rawdata)
+```
+### Data Transformation
+```{r echo=TRUE}
+cleandata <- narrowdata
+
+cleandata$PROPDMG_estimatedCost <- ifelse(
+        cleandata$PROPDMGEXP %in% c("K","k"),1000*cleandata$PROPDMG, 
+        ifelse(cleandata$PROPDMGEXP %in% c("M","m"),1000000*cleandata$PROPDMG, 
+               ifelse(cleandata$PROPDMGEXP %in% c("B","b"),1000000000*cleandata$PROPDMG,
+                      ifelse(cleandata$PROPDMGEXP %in% c("H","h"),100*cleandata$PROPDMG,
+                      cleandata$PROPDMG))))
+
+cleandata$CROPDMG_estimatedCost <- ifelse(
+        cleandata$CROPDMGEXP %in% c("K","k"),1000*cleandata$CROPDMG, 
+        ifelse(cleandata$CROPDMGEXP %in% c("M","m"),1000000*cleandata$CROPDMG, 
+               ifelse(cleandata$CROPDMGEXP %in% c("B","b"),1000000000*cleandata$CROPDMG,
+                      ifelse(cleandata$CROPDMGEXP %in% c("H","h"),100*cleandata$CROPDMG,
+                      cleandata$CROPDMG))))
+
+cleandata$TotalCostDamages <- cleandata$PROPDMG_estimatedCost + cleandata$CROPDMG_estimatedCost
+
+cleandata$TotalHealthEvents <- cleandata$FATALITIES + cleandata$INJURIES
+```
+
+## Results
+```{r echo=TRUE}
+library(plyr)
+library(ggplot2)
+
+TotalCostDamages <- aggregate(TotalCostDamages ~ EVTYPE, data = cleandata, sum )
+PROPDMG_estimatedCost <- aggregate(PROPDMG_estimatedCost ~ EVTYPE, data = cleandata, sum )
+CROPDMG_estimatedCost <- aggregate(CROPDMG_estimatedCost ~ EVTYPE, data = cleandata, sum )
+CostDamages <- join(TotalCostDamages, PROPDMG_estimatedCost, by = "EVTYPE")
+CostDamages <- join(CostDamages, CROPDMG_estimatedCost, by = "EVTYPE")
+
+CostDamages$check = CostDamages$TotalCostDamages - CostDamages$PROPDMG_estimatedCost - CostDamages$CROPDMG_estimatedCost
+CostDamages <- CostDamages[order(-CostDamages[,"TotalCostDamages"]),]
+
+sum(CostDamages$check)<1e-3
+
+qplot(EVTYPE,TotalCostDamages/1e9, data = CostDamages[1:5,], geom="bar", stat="identity"
+      ,xlab = "Event Type"
+      ,ylab = "Total Cost (Billions $)"
+      ,main = "Cost Damages from Extreme Weather"
+      )
+
+
+TotalHealthEvents <- aggregate(TotalHealthEvents ~ EVTYPE, data = cleandata, sum )
+TotalHealthEvents <- TotalHealthEvents[order(-TotalHealthEvents[,"TotalHealthEvents"]),]
+
+qplot(EVTYPE,TotalHealthEvents/1000, data = TotalHealthEvents[1:5,], geom="bar", stat="identity"
+      ,xlab = "Event Type"
+      ,ylab = "Fatalities + Injuries (1000)"
+      ,main = "Health Damages from Extreme Weather"
+      )
+
+```
